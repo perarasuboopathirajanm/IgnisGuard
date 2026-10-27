@@ -1,0 +1,222 @@
+<!doctype html>
+<!-- IgnisGuard - Copyright (c) 2026 Perarasu Boopathirajan. All rights reserved. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="author" content="Perarasu Boopathirajan">
+<meta name="copyright" content="(c) 2026 Perarasu Boopathirajan">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IgnisGuard — Fire & PPE Detection · by Perarasu Boopathirajan</title>
+<link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><div class="logo">🔥</div><div>IgnisGuard<br><small>Fire &amp; PPE Safety AI</small></div></div>
+  <nav>
+    <button class="active" data-tab="analysis">Analysis</button>
+    <button data-tab="training">Training</button>
+  </nav>
+  <div class="model-pill" id="modelPill"><span class="dot" id="modelDot"></span><span id="modelName">Connecting…</span></div>
+  <button class="btn sm" id="setBtn" title="Backend settings">⚙ Settings</button>
+</header>
+
+<dialog id="settings">
+  <h3 style="margin-top:0">Backend connection</h3>
+  <label class="small muted">Backend URL (your Hugging Face Space)</label>
+  <input id="setApi" placeholder="https://your-name-ignisguard-api.hf.space">
+  <p class="hint">Leave it empty to use the default from <code>config.js</code>.</p>
+  <label class="small muted">API key (only if you set IGNIS_API_KEY on the Space)</label>
+  <input id="setKey" type="password" placeholder="optional">
+  <div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" id="setCancel">Cancel</button><button class="btn primary" id="setSave">Save &amp; reload</button></div>
+</dialog>
+<main>
+<div class="card" id="offline" style="display:none;border-color:var(--accent2);margin-bottom:14px"><b>⏳ Backend not reachable</b><p class="small muted" id="offlineMsg" style="margin:6px 0 0"></p></div>
+<!-- ======================= ANALYSIS ======================= -->
+<section class="tab active" id="tab-analysis">
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h3>Source</h3>
+        <div class="seg" id="srcSeg">
+          <button class="active" data-src="image">Images</button>
+          <button data-src="video">Video</button>
+          <button data-src="webcam">Webcam</button>
+        </div>
+        <div style="margin-top:12px" id="srcImage">
+          <div class="drop" id="anDrop"><b>Drop images here</b><br>or click to browse<br><span class="small">JPG · PNG · WEBP — several at once is fine</span></div>
+          <input type="file" id="anFile" accept="image/*" multiple hidden>
+        </div>
+        <div style="margin-top:12px;display:none" id="srcVideo">
+          <div class="drop" id="vidDrop"><b>Choose a video file</b><br><span class="small">MP4 · WEBM · MOV</span></div>
+          <input type="file" id="vidFile" accept="video/*" hidden>
+        </div>
+        <div style="margin-top:12px;display:none" id="srcWebcam">
+          <button class="btn primary" id="camBtn" style="width:100%">Start webcam</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>What to detect</h3>
+        <div class="toggle"><span>🔥 Fire &amp; smoke</span><label class="switch"><input type="checkbox" id="chkFire" checked><span></span></label></div>
+        <div class="toggle"><span>⛑️ No helmet</span><label class="switch"><input type="checkbox" id="chkHelmet" checked><span></span></label></div>
+        <div class="toggle"><span>🦺 No fire jacket</span><label class="switch"><input type="checkbox" id="chkJacket" checked><span></span></label></div>
+        <div class="row" style="margin-top:14px"><label>Confidence threshold</label><b id="confVal">0.35</b></div>
+        <input type="range" id="conf" min="0.05" max="0.95" step="0.05" value="0.35">
+        <p class="hint">Lower it to catch more objects, raise it to cut false alarms.</p>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="alerts" id="alerts"><span class="muted">Results will appear here.</span></div>
+        <div class="viewer" id="viewer">
+          <div class="placeholder" id="placeholder"><div class="big">🧯</div>Upload an image, video, or start the webcam to analyse it.</div>
+          <img id="resultImg" style="display:none" alt="">
+          <div id="liveBox" style="display:none;position:relative">
+            <video id="video" playsinline muted style="display:none"></video>
+            <canvas id="liveCanvas"></canvas>
+          </div>
+        </div>
+        <div class="row" id="liveCtl" style="display:none">
+          <button class="btn" id="playBtn">Pause</button>
+          <span class="muted small" id="fps"></span>
+          <span style="flex:1"></span>
+          <button class="btn danger" id="stopLive">Stop</button>
+        </div>
+        <div class="gallery" id="anGallery"></div>
+      </div>
+      <div class="card">
+        <h3>Detections</h3>
+        <table><thead><tr><th>Object</th><th>Confidence</th><th>Box (x1, y1, x2, y2)</th><th>Source</th></tr></thead>
+          <tbody id="detTable"><tr><td colspan="4" class="muted">—</td></tr></tbody></table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= TRAINING ======================= -->
+<section class="tab" id="tab-training">
+  <div class="steps">
+    <div class="step active" data-pane="upload"><b>1 · Add images</b><span id="stepUp">Upload photos or a labelled dataset</span></div>
+    <div class="step" data-pane="label"><b>2 · Label</b><span id="stepLab">Draw boxes on each image</span></div>
+    <div class="step" data-pane="train"><b>3 · Train &amp; models</b><span id="stepTr">Train and manage models</span></div>
+  </div>
+
+  <!-- upload -->
+  <div class="pane active" id="pane-upload">
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <div class="card">
+        <h3>Upload images to label</h3>
+        <div class="drop" id="trDrop" style="padding:44px 12px"><b>Drop training images here</b><br>or click to browse<br><span class="small">Add fire scenes, workers with and without helmets and jackets, plus normal scenes</span></div>
+        <input type="file" id="trFile" accept="image/*" multiple hidden>
+        <p class="hint">After uploading, go to <b>2 · Label</b> and draw boxes. Aim for <b>at least 20–50 images per class</b>. More variety (lighting, angles, distance) gives a better model.</p>
+      </div>
+      <div class="card">
+        <h3>…or import a labelled dataset</h3>
+        <div class="drop" id="zipDrop" style="padding:44px 12px"><b>Drop a YOLO-format .zip</b><br><span class="small">images/ + labels/ (+ data.yaml). Roboflow “YOLOv8” exports work.</span></div>
+        <input type="file" id="zipFile" accept=".zip" hidden>
+        <p class="hint">Class names are mapped automatically, e.g. <i>Hardhat → helmet</i>, <i>NO-Hardhat / head → no_helmet</i>, <i>Safety Vest → fire_jacket</i>, <i>NO-Safety Vest → no_fire_jacket</i>, <i>Fire → fire</i>. Classes that don't match are skipped.</p>
+        <div id="importResult" class="small"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Dataset overview</h3>
+      <div class="stat" id="dsStat"></div>
+      <div id="dsBars" style="margin-top:14px"></div>
+    </div>
+  </div>
+
+  <!-- label -->
+  <div class="pane" id="pane-label">
+    <div class="label-layout">
+      <div class="card" style="padding:10px">
+        <div class="seg" id="thumbFilter" style="margin-bottom:8px">
+          <button class="active" data-f="all">All</button><button data-f="unlabeled">To do</button><button data-f="labeled">Done</button>
+        </div>
+        <div class="thumbs" id="thumbs"></div>
+      </div>
+      <div>
+        <div class="row" style="margin-top:0">
+          <button class="btn" id="prevImg">◀ Prev <kbd>A</kbd></button>
+          <span class="muted small" id="annInfo" style="flex:1;text-align:center">No image selected</span>
+          <button class="btn" id="nextImg">Next <kbd>D</kbd> ▶</button>
+        </div>
+        <div class="annot-wrap" id="annWrap">
+          <div class="placeholder" id="annPh"><div class="big">🖼️</div>Upload images in step 1, then pick one on the left.</div>
+          <canvas id="annCanvas" style="display:none"></canvas>
+        </div>
+        <div class="row">
+          <button class="btn" id="autoBtn" title="Pre-fill boxes using the current model">✨ Auto-label</button>
+          <button class="btn" id="clearBtn">Clear boxes</button>
+          <button class="btn" id="bgBtn" title="Image contains none of the classes (still useful for training)">No objects</button>
+          <span style="flex:1"></span>
+          <button class="btn danger" id="delImg">Delete image</button>
+          <button class="btn primary" id="saveBtn">Save &amp; next <kbd>S</kbd></button>
+        </div>
+        <p class="hint">Drag anywhere to draw a box (you can draw inside another box). Click a box to select it; <kbd>Shift</kbd>+drag moves a box, and dragging the corners of a selected box resizes it. <kbd>Del</kbd> removes the selected box, <kbd>1</kbd>–<kbd>7</kbd> pick the class (and relabel the selected box). Draw <i>person</i> around the whole body, <i>helmet</i>/<i>no_helmet</i> around the head, and <i>fire_jacket</i>/<i>no_fire_jacket</i> around the torso.</p>
+      </div>
+      <div>
+        <div class="card" style="padding:12px">
+          <h3>Class</h3>
+          <div class="cls-list" id="clsList"></div>
+        </div>
+        <div class="card" style="padding:12px">
+          <h3>Boxes on this image</h3>
+          <div class="boxlist" id="boxList"><span class="muted">None</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- train -->
+  <div class="pane" id="pane-train">
+    <div class="grid">
+      <div>
+        <div class="card">
+          <h3>Training settings</h3>
+          <label class="small muted">Base model</label>
+          <select id="tBase">
+            <option value="yolo11n">YOLO11 Nano: fastest, runs on CPU</option>
+            <option value="yolo11s">YOLO11 Small: balanced</option>
+            <option value="yolo11m">YOLO11 Medium: most accurate, needs a GPU</option>
+          </select>
+          <div class="row"><div style="flex:1"><label class="small muted">Epochs</label><input type="number" id="tEpochs" value="50" min="1" max="1000"></div>
+          <div style="flex:1"><label class="small muted">Image size</label><select id="tImg"><option>416</option><option>512</option><option selected>640</option><option>800</option></select></div></div>
+          <div class="row"><div style="flex:1"><label class="small muted">Batch</label><input type="number" id="tBatch" value="8" min="1" max="128"></div>
+          <div style="flex:1"><label class="small muted">Device</label><select id="tDev"><option value="auto">Auto</option><option value="cpu">CPU</option><option value="0">GPU 0</option><option value="mps">Apple (mps)</option></select></div></div>
+          <div class="row">
+            <button class="btn primary" id="trainBtn" style="flex:1">▶ Start training</button>
+            <button class="btn danger" id="stopBtn" disabled>Stop</button>
+          </div>
+          <p class="hint">Training runs in the background, so you can keep using Analysis. When it finishes, the best model is saved and switched on automatically.</p>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h3>Progress</h3>
+          <div class="row" style="margin-top:0"><b id="tStatus">Idle</b><span style="flex:1"></span><span class="muted small" id="tEta"></span></div>
+          <div class="progress"><div id="tBar"></div></div>
+          <p class="small muted" id="tMsg"></p>
+          <canvas id="chart" height="220" style="width:100%;margin-top:8px"></canvas>
+          <div class="small muted" style="display:flex;gap:16px"><span><span class="chip" style="background:var(--accent)">&nbsp;</span> training loss</span><span><span class="chip" style="background:var(--ok)">&nbsp;</span> accuracy (mAP@50)</span></div>
+        </div>
+        <div class="card">
+          <h3>Models</h3>
+          <table><thead><tr><th>Name</th><th>Size</th><th>Created</th><th></th></tr></thead><tbody id="modelTable"></tbody></table>
+          <div class="row">
+            <button class="btn" id="starterBtn">Use starter model (zero-shot)</button>
+            <span style="flex:1"></span>
+            <button class="btn" id="upModelBtn">Upload .pt model</button>
+            <input type="file" id="upModel" accept=".pt" hidden>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+<footer class="credit">IgnisGuard · Built by <b>Perarasu Boopathirajan</b> · © 2026 All rights reserved</footer>
+<script src="static/config.js"></script>
+<script src="static/app.js"></script>
+</body>
+</html>
